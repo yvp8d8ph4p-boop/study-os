@@ -31,12 +31,12 @@ const menuCards: MenuCard[] = [
   },
   {
     title: "英文法",
-    description: "文法の要点まとめと確認問題",
-    href: "#",
+    description: "基本文法のまとめを見ながら、メモや表を書き足せる文法ノート",
+    href: "/english/grammar",
     emoji: "📖",
     background: "#DCFCE7",
     color: "#15803D",
-    available: false,
+    available: true,
   },
   {
     title: "リスニング",
@@ -132,8 +132,7 @@ export default function EnglishPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(260px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
             gap: "18px",
           }}
         >
@@ -154,8 +153,7 @@ export default function EnglishPage() {
                     padding: "24px",
                     borderRadius: "22px",
                     background: "white",
-                    boxShadow:
-                      "0 10px 28px rgba(15, 23, 42, 0.08)",
+                    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.08)",
                     border: "1px solid #E2E8F0",
                     boxSizing: "border-box",
                     cursor: "pointer",
