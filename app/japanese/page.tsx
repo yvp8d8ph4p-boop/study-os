@@ -1,391 +1,310 @@
-"use client";
-
 import Link from "next/link";
-import { CSSProperties, useEffect, useState } from "react";
 
-type SubjectCard = {
+type MenuCard = {
   title: string;
-  englishTitle: string;
   description: string;
-  icon: string;
   href: string;
-  comingSoon?: boolean;
+  emoji: string;
+  background: string;
+  color: string;
+  available: boolean;
 };
 
-const subjectCards: SubjectCard[] = [
+const menuCards: MenuCard[] = [
   {
     title: "現代文",
-    englishTitle: "Modern Japanese",
-    description: "読解テクニック・評論キーワード・接続語・指示語",
-    icon: "📚",
+    description: "評論・小説の読解、接続語、指示語、重要キーワード",
     href: "/japanese/modern",
+    emoji: "📚",
+    background: "#DBEAFE",
+    color: "#1D4ED8",
+    available: true,
   },
   {
     title: "古文",
-    englishTitle: "Classical Japanese",
-    description: "古文単語・助動詞・助詞・敬語・文法",
-    icon: "🏯",
+    description: "古文単語・助動詞・助詞・敬語・読解の学習",
     href: "/japanese/classical",
+    emoji: "🏯",
+    background: "#FEF3C7",
+    color: "#B45309",
+    available: true,
   },
   {
     title: "漢文",
-    englishTitle: "Kanbun",
-    description: "返り点・再読文字・句法・用法まとめ",
-    icon: "📜",
+    description: "返り点・再読文字・重要句法・書き下し文",
     href: "/japanese/kanbun",
+    emoji: "📜",
+    background: "#EDE9FE",
+    color: "#7C3AED",
+    available: true,
   },
   {
     title: "語彙",
-    englishTitle: "Vocabulary",
-    description: "評論語・慣用句・ことわざ・故事成語・四字熟語",
-    icon: "💬",
+    description: "四字熟語・慣用句・ことわざ・類義語・対義語",
     href: "/japanese/vocabulary",
+    emoji: "💬",
+    background: "#FFE4E6",
+    color: "#BE123C",
+    available: true,
+  },
+  {
+    title: "国文法",
+    description: "文節・品詞・活用・助詞・助動詞・敬語を整理して学習",
+    href: "/japanese/grammar",
+    emoji: "📝",
+    background: "#DCFCE7",
+    color: "#15803D",
+    available: true,
   },
   {
     title: "文学",
-    englishTitle: "Literature",
-    description: "和歌・短歌・俳句・川柳・詩・お気に入り作品",
-    icon: "🎋",
+    description: "短歌・俳句・詩・文学作品について学習",
     href: "/japanese/literature",
+    emoji: "🎋",
+    background: "#FCE7F3",
+    color: "#BE185D",
+    available: true,
   },
   {
     title: "漢字",
-    englishTitle: "Kanji",
-    description: "漢字学習ページは今後追加予定",
-    icon: "✏️",
+    description: "読み・書き・熟語・同音異義語を学習",
     href: "/japanese/kanji",
-    comingSoon: true,
+    emoji: "✏️",
+    background: "#E0F2FE",
+    color: "#0369A1",
+    available: false,
   },
 ];
 
-const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    padding: "32px 16px 70px",
-    background:
-      "linear-gradient(145deg, #faf7f4 0%, #f8f4f1 45%, #f3ece9 100%)",
-    color: "#292524",
-  },
-  container: {
-    width: "100%",
-    maxWidth: "1120px",
-    margin: "0 auto",
-  },
-  topBar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "16px",
-    marginBottom: "38px",
-    flexWrap: "wrap",
-  },
-  brand: {
-    margin: 0,
-    color: "#7f1d1d",
-    fontSize: "13px",
-    fontWeight: 900,
-    letterSpacing: "0.14em",
-  },
-  homeLink: {
-    display: "inline-flex",
-    alignItems: "center",
-    minHeight: "42px",
-    padding: "0 15px",
-    border: "1px solid #e2d4d1",
-    borderRadius: "12px",
-    background: "rgba(255,255,255,0.8)",
-    color: "#7f1d1d",
-    fontSize: "14px",
-    fontWeight: 850,
-    textDecoration: "none",
-  },
-  hero: {
-    marginBottom: "38px",
-    padding: "42px clamp(22px, 6vw, 60px)",
-    border: "1px solid #e5d6d2",
-    borderRadius: "28px",
-    background:
-      "linear-gradient(135deg, rgba(127,29,29,0.98), rgba(107,33,33,0.95))",
-    boxShadow: "0 24px 60px rgba(88, 28, 28, 0.16)",
-    color: "#ffffff",
-  },
-  heroSmall: {
-    margin: "0 0 10px",
-    color: "#fecaca",
-    fontSize: "12px",
-    fontWeight: 900,
-    letterSpacing: "0.16em",
-    textTransform: "uppercase",
-  },
-  heroTitle: {
-    margin: 0,
-    fontSize: "clamp(42px, 8vw, 72px)",
-    lineHeight: 1,
-    letterSpacing: "-0.05em",
-  },
-  heroJapanese: {
-    display: "block",
-    marginTop: "12px",
-    fontSize: "clamp(20px, 4vw, 30px)",
-    fontWeight: 800,
-    letterSpacing: "0.08em",
-  },
-  heroText: {
-    maxWidth: "650px",
-    margin: "20px 0 0",
-    color: "#fee2e2",
-    fontSize: "15px",
-    lineHeight: 1.9,
-  },
-  sectionHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    gap: "14px",
-    marginBottom: "18px",
-    flexWrap: "wrap",
-  },
-  sectionTitle: {
-    margin: 0,
-    color: "#3f2927",
-    fontSize: "24px",
-  },
-  sectionText: {
-    margin: 0,
-    color: "#8a6e69",
-    fontSize: "13px",
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: "16px",
-  },
-  card: {
-    position: "relative",
-    display: "block",
-    minHeight: "170px",
-    padding: "22px",
-    overflow: "hidden",
-    border: "1px solid #e4d8d4",
-    borderRadius: "20px",
-    background: "rgba(255,255,255,0.9)",
-    boxShadow: "0 12px 30px rgba(89, 60, 55, 0.07)",
-    color: "#292524",
-    textDecoration: "none",
-    transition:
-      "transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease",
-  },
-  cardAccent: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: "5px",
-    height: "100%",
-    background: "#991b1b",
-  },
-  cardTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "14px",
-  },
-  iconBox: {
-    display: "grid",
-    placeItems: "center",
-    width: "52px",
-    height: "52px",
-    borderRadius: "15px",
-    background: "#fef2f2",
-    fontSize: "27px",
-  },
-  arrow: {
-    color: "#a86464",
-    fontSize: "22px",
-    fontWeight: 900,
-  },
-  cardTitle: {
-    margin: "18px 0 4px",
-    color: "#4c2828",
-    fontSize: "21px",
-  },
-  englishTitle: {
-    margin: 0,
-    color: "#9f7370",
-    fontSize: "11px",
-    fontWeight: 900,
-    letterSpacing: "0.1em",
-    textTransform: "uppercase",
-  },
-  description: {
-    margin: "11px 0 0",
-    color: "#6f5a57",
-    fontSize: "13px",
-    lineHeight: 1.75,
-  },
-  badge: {
-    display: "inline-flex",
-    alignItems: "center",
-    minHeight: "27px",
-    marginTop: "14px",
-    padding: "0 9px",
-    border: "1px solid #e7d1cd",
-    borderRadius: "999px",
-    background: "#fff7f6",
-    color: "#9f3737",
-    fontSize: "10px",
-    fontWeight: 900,
-    letterSpacing: "0.08em",
-  },
-  footer: {
-    marginTop: "34px",
-    paddingTop: "20px",
-    borderTop: "1px solid #e3d8d4",
-    color: "#9a7f7a",
-    fontSize: "12px",
-    textAlign: "center",
-  },
-};
-
-export default function JapaneseHomePage() {
-  const [isMobile, setIsMobile] = useState(false);
-  const [hoveredCard, setHoveredCard] = useState<string | null>(
-    null,
-  );
-
-  useEffect(() => {
-    const checkWidth = () => {
-      setIsMobile(window.innerWidth < 720);
-    };
-
-    checkWidth();
-    window.addEventListener("resize", checkWidth);
-
-    return () => {
-      window.removeEventListener("resize", checkWidth);
-    };
-  }, []);
-
+export default function JapanesePage() {
   return (
-    <main style={styles.page}>
-      <div style={styles.container}>
-        <div style={styles.topBar}>
-          <p style={styles.brand}>STUDY OS / JAPANESE</p>
-
-          <Link href="/" style={styles.homeLink}>
-            ← ホームへ戻る
-          </Link>
-        </div>
-
-        <section style={styles.hero}>
-          <p style={styles.heroSmall}>Japanese Study</p>
-
-          <h1 style={styles.heroTitle}>
-            Japanese
-            <span style={styles.heroJapanese}>国語</span>
-          </h1>
-
-          <p style={styles.heroText}>
-            言葉を学び、文章を読み、自分の考えを深める。
-            現代文から古文、漢文、文学までを整理する国語学習ホーム。
-          </p>
-        </section>
-
-        <section>
-          <div style={styles.sectionHeader}>
-            <div>
-              <h2 style={styles.sectionTitle}>学習メニュー</h2>
-              <p style={styles.sectionText}>
-                学びたい分野を選んでください。
-              </p>
-            </div>
-          </div>
-
+    <main
+      style={{
+        minHeight: "100vh",
+        padding: "40px 20px 60px",
+        background:
+          "linear-gradient(180deg, #FFF1F2 0%, #F8FAFC 55%, #FFFFFF 100%)",
+        color: "#0F172A",
+      }}
+    >
+      <section
+        style={{
+          maxWidth: "1000px",
+          margin: "0 auto",
+        }}
+      >
+        <header
+          style={{
+            textAlign: "center",
+            marginBottom: "38px",
+          }}
+        >
           <div
             style={{
-              ...styles.grid,
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : "repeat(2, minmax(0, 1fr))",
+              display: "inline-grid",
+              placeItems: "center",
+              width: "88px",
+              height: "88px",
+              marginBottom: "16px",
+              borderRadius: "28px",
+              background: "white",
+              boxShadow: "0 12px 30px rgba(190, 18, 60, 0.14)",
+              fontSize: "48px",
             }}
           >
-            {subjectCards.map((card) => {
-              const isHovered = hoveredCard === card.title;
+            📕
+          </div>
 
-              const cardContent = (
-                <>
-                  <span style={styles.cardAccent} />
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "clamp(42px, 8vw, 66px)",
+              color: "#BE123C",
+            }}
+          >
+            国語
+          </h1>
 
-                  <div style={styles.cardTop}>
-                    <div style={styles.iconBox}>{card.icon}</div>
+          <p
+            style={{
+              margin: "12px auto 0",
+              maxWidth: "650px",
+              color: "#64748B",
+              fontSize: "19px",
+              lineHeight: 1.8,
+            }}
+          >
+            現代文・古文・漢文・語彙・文法・文学をまとめて勉強するページ
+          </p>
+        </header>
 
-                    <span style={styles.arrow}>
-                      {card.comingSoon ? "—" : "→"}
-                    </span>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: "18px",
+          }}
+        >
+          {menuCards.map((card) =>
+            card.available ? (
+              <Link
+                key={card.title}
+                href={card.href}
+                style={{
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+              >
+                <article
+                  style={{
+                    height: "100%",
+                    minHeight: "190px",
+                    padding: "24px",
+                    borderRadius: "22px",
+                    background: "white",
+                    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.08)",
+                    border: "1px solid #E2E8F0",
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                    transition:
+                      "transform 0.2s ease, box-shadow 0.2s ease",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      placeItems: "center",
+                      width: "64px",
+                      height: "64px",
+                      marginBottom: "18px",
+                      borderRadius: "18px",
+                      background: card.background,
+                      fontSize: "34px",
+                    }}
+                  >
+                    {card.emoji}
                   </div>
 
-                  <h3 style={styles.cardTitle}>{card.title}</h3>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: "27px",
+                      color: card.color,
+                    }}
+                  >
+                    {card.title}
+                  </h2>
 
-                  <p style={styles.englishTitle}>
-                    {card.englishTitle}
-                  </p>
-
-                  <p style={styles.description}>
+                  <p
+                    style={{
+                      margin: "10px 0 0",
+                      color: "#64748B",
+                      fontSize: "17px",
+                      lineHeight: 1.7,
+                    }}
+                  >
                     {card.description}
                   </p>
 
-                  {card.comingSoon && (
-                    <span style={styles.badge}>COMING SOON</span>
-                  )}
-                </>
-              );
-
-              if (card.comingSoon) {
-                return (
-                  <div
-                    key={card.title}
+                  <p
                     style={{
-                      ...styles.card,
-                      opacity: 0.68,
-                      cursor: "not-allowed",
+                      margin: "18px 0 0",
+                      color: card.color,
+                      fontWeight: "bold",
+                      fontSize: "17px",
                     }}
                   >
-                    {cardContent}
-                  </div>
-                );
-              }
-
-              return (
-                <Link
-                  key={card.title}
-                  href={card.href}
+                    開く →
+                  </p>
+                </article>
+              </Link>
+            ) : (
+              <article
+                key={card.title}
+                style={{
+                  minHeight: "190px",
+                  padding: "24px",
+                  borderRadius: "22px",
+                  background: "#F8FAFC",
+                  border: "1px dashed #CBD5E1",
+                  boxSizing: "border-box",
+                  opacity: 0.78,
+                }}
+              >
+                <div
                   style={{
-                    ...styles.card,
-                    transform: isHovered
-                      ? "translateY(-5px)"
-                      : "translateY(0)",
-                    boxShadow: isHovered
-                      ? "0 20px 42px rgba(89, 37, 37, 0.14)"
-                      : styles.card.boxShadow,
-                    borderColor: isHovered
-                      ? "#c99a94"
-                      : "#e4d8d4",
+                    display: "grid",
+                    placeItems: "center",
+                    width: "64px",
+                    height: "64px",
+                    marginBottom: "18px",
+                    borderRadius: "18px",
+                    background: card.background,
+                    fontSize: "34px",
                   }}
-                  onMouseEnter={() =>
-                    setHoveredCard(card.title)
-                  }
-                  onMouseLeave={() => setHoveredCard(null)}
                 >
-                  {cardContent}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
+                  {card.emoji}
+                </div>
 
-        <footer style={styles.footer}>
-          STUDY OS — Japanese
-        </footer>
-      </div>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "27px",
+                    color: card.color,
+                  }}
+                >
+                  {card.title}
+                </h2>
+
+                <p
+                  style={{
+                    margin: "10px 0 0",
+                    color: "#64748B",
+                    fontSize: "17px",
+                    lineHeight: 1.7,
+                  }}
+                >
+                  {card.description}
+                </p>
+
+                <span
+                  style={{
+                    display: "inline-block",
+                    marginTop: "17px",
+                    padding: "7px 12px",
+                    borderRadius: "999px",
+                    background: "#E2E8F0",
+                    color: "#475569",
+                    fontSize: "14px",
+                    fontWeight: "bold",
+                  }}
+                >
+                  準備中
+                </span>
+              </article>
+            ),
+          )}
+        </div>
+
+        <div
+          style={{
+            marginTop: "34px",
+            textAlign: "center",
+          }}
+        >
+          <Link
+            href="/"
+            style={{
+              color: "#BE123C",
+              fontSize: "20px",
+              fontWeight: "bold",
+              textDecoration: "none",
+            }}
+          >
+            ← ホームへ戻る
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }
