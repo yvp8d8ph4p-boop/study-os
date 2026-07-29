@@ -31,7 +31,29 @@ type TimerPreset = {
   breakMinutes: number;
 };
 
+type SavedTimerState = {
+  mode: TimerMode;
+  focusMinutes: number;
+  breakMinutes: number;
+  customFocusMinutes: number;
+  customBreakMinutes: number;
+  selectedPreset: "25 / 5" | "50 / 10" | "custom";
+  totalSets: number;
+  currentSet: number;
+  completedSets: number;
+  subject: SubjectName;
+  secondsLeft: number;
+  isRunning: boolean;
+  autoSwitch: boolean;
+  soundEnabled: boolean;
+  waitingForNext: boolean;
+  sessionStartedAt: string | null;
+  completionMessage: string | null;
+  targetEndTime: number | null;
+};
+
 const STORAGE_KEY = "studyRecords";
+const TIMER_STORAGE_KEY = "study-os-pomodoro-timer";
 const DAILY_GOAL_MINUTES = 240;
 
 const subjects: SubjectName[] = [
@@ -328,6 +350,8 @@ export default function PomodoroPage() {
     StudyRecord[]
   >([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [timerStateLoaded, setTimerStateLoaded] =
+    useState(false);
 
   const [mode, setMode] = useState<TimerMode>("focus");
   const [focusMinutes, setFocusMinutes] = useState(25);
@@ -380,8 +404,201 @@ export default function PomodoroPage() {
 
   useEffect(() => {
     setStudyRecords(loadStudyRecords());
+
+    const savedValue = localStorage.getItem(
+      TIMER_STORAGE_KEY,
+    );
+
+    if (savedValue) {
+      try {
+        const saved = JSON.parse(
+          savedValue,
+        ) as Partial<SavedTimerState>;
+
+        if (saved.mode === "focus" || saved.mode === "break") {
+          setMode(saved.mode);
+        }
+
+        if (typeof saved.focusMinutes === "number") {
+          setFocusMinutes(saved.focusMinutes);
+        }
+
+        if (typeof saved.breakMinutes === "number") {
+          setBreakMinutes(saved.breakMinutes);
+        }
+
+        if (typeof saved.customFocusMinutes === "number") {
+          setCustomFocusMinutes(saved.customFocusMinutes);
+        }
+
+        if (typeof saved.customBreakMinutes === "number") {
+          setCustomBreakMinutes(saved.customBreakMinutes);
+        }
+
+        if (
+          saved.selectedPreset === "25 / 5" ||
+          saved.selectedPreset === "50 / 10" ||
+          saved.selectedPreset === "custom"
+        ) {
+          setSelectedPreset(saved.selectedPreset);
+        }
+
+        if (typeof saved.totalSets === "number") {
+          setTotalSets(Math.min(Math.max(saved.totalSets, 1), 12));
+        }
+
+        if (typeof saved.currentSet === "number") {
+          setCurrentSet(Math.max(saved.currentSet, 1));
+        }
+
+        if (typeof saved.completedSets === "number") {
+          setCompletedSets(Math.max(saved.completedSets, 0));
+        }
+
+        if (
+          typeof saved.subject === "string" &&
+          subjects.includes(saved.subject as SubjectName)
+        ) {
+          setSubject(saved.subject as SubjectName);
+        }
+
+        if (typeof saved.autoSwitch === "boolean") {
+          setAutoSwitch(saved.autoSwitch);
+        }
+
+        if (typeof saved.soundEnabled === "boolean") {
+          setSoundEnabled(saved.soundEnabled);
+        }
+
+        if (typeof saved.waitingForNext === "boolean") {
+          setWaitingForNext(saved.waitingForNext);
+        }
+
+        if (
+          typeof saved.sessionStartedAt === "string" ||
+          saved.sessionStartedAt === null
+        ) {
+          setSessionStartedAt(saved.sessionStartedAt ?? null);
+        }
+
+        if (
+          typeof saved.completionMessage === "string" ||
+          saved.completionMessage === null
+        ) {
+          setCompletionMessage(saved.completionMessage ?? null);
+        }
+
+        const savedSeconds =
+          typeof saved.secondsLeft === "number"
+            ? Math.max(Math.ceil(saved.secondsLeft), 0)
+            : 25 * 60;
+
+        if (
+          saved.isRunning === true &&
+          typeof saved.targetEndTime === "number"
+        ) {
+          targetEndTimeRef.current = saved.targetEndTime;
+          setSecondsLeft(
+            Math.max(
+              Math.ceil(
+                (saved.targetEndTime - Date.now()) / 1000,
+              ),
+              0,
+            ),
+          );
+          setIsRunning(true);
+        } else {
+          targetEndTimeRef.current = null;
+          setSecondsLeft(savedSeconds);
+          setIsRunning(false);
+        }
+      } catch {
+        localStorage.removeItem(TIMER_STORAGE_KEY);
+      }
+    }
+
+    setTimerStateLoaded(true);
     setIsLoaded(true);
   }, []);
+
+  const saveTimerState = useCallback(() => {
+    if (!timerStateLoaded) {
+      return;
+    }
+
+    const timerState: SavedTimerState = {
+      mode,
+      focusMinutes,
+      breakMinutes,
+      customFocusMinutes,
+      customBreakMinutes,
+      selectedPreset,
+      totalSets,
+      currentSet,
+      completedSets,
+      subject,
+      secondsLeft,
+      isRunning,
+      autoSwitch,
+      soundEnabled,
+      waitingForNext,
+      sessionStartedAt,
+      completionMessage,
+      targetEndTime: targetEndTimeRef.current,
+    };
+
+    localStorage.setItem(
+      TIMER_STORAGE_KEY,
+      JSON.stringify(timerState),
+    );
+  }, [
+    autoSwitch,
+    breakMinutes,
+    completedSets,
+    completionMessage,
+    currentSet,
+    customBreakMinutes,
+    customFocusMinutes,
+    focusMinutes,
+    isRunning,
+    mode,
+    secondsLeft,
+    selectedPreset,
+    sessionStartedAt,
+    soundEnabled,
+    subject,
+    timerStateLoaded,
+    totalSets,
+    waitingForNext,
+  ]);
+
+  useEffect(() => {
+    saveTimerState();
+  }, [saveTimerState]);
+
+  useEffect(() => {
+    const saveBeforeLeaving = () => {
+      saveTimerState();
+    };
+
+    window.addEventListener("pagehide", saveBeforeLeaving);
+    document.addEventListener(
+      "visibilitychange",
+      saveBeforeLeaving,
+    );
+
+    return () => {
+      saveBeforeLeaving();
+      window.removeEventListener(
+        "pagehide",
+        saveBeforeLeaving,
+      );
+      document.removeEventListener(
+        "visibilitychange",
+        saveBeforeLeaving,
+      );
+    };
+  }, [saveTimerState]);
 
   const updateRecords = useCallback(
     (

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Zen_Maru_Gothic } from "next/font/google";
+import BottomNavigation from "@/components/ui/BottomNavigation";
 
 const zenMaru = Zen_Maru_Gothic({
   subsets: ["latin"],
@@ -32,7 +33,13 @@ export default function RootLayout({
       lang="ja"
       className={`${zenMaru.className}  h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+  <div className="flex-1 pb-28">
+    {children}
+  </div>
+
+  <BottomNavigation />
+</body>
     </html>
   );
 }
