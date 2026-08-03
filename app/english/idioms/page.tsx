@@ -1,1409 +1,927 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-type Idiom = {
-  id: number;
-  english: string;
-  japanese: string;
-  correct: number;
-  wrong: number;
+import {
+  createIdiom,
+  createIdiomFolder,
+  deleteIdiomFolder,
+  getDueIdiomMeanings,
+  getFavoriteIdioms,
+  getIdiomFolders,
+  getIdioms,
+  getIdiomStats,
+  getWeakIdiomMeanings,
+  updateIdiomFolder,
+} from "./storage";
+
+import type { IdiomFolder } from "./types";
+
+type MeaningDraft = {
+  meaning: string;
+  example: string;
+  note: string;
 };
 
-type StudyStats = {
-  totalAnswers: number;
-  correctAnswers: number;
-  listeningCount: number;
-};
+const folderColors = [
+  "#7C3AED",
+  "#2563EB",
+  "#16A34A",
+  "#EA580C",
+  "#DC2626",
+  "#0891B2",
+  "#0F172A",
+];
 
-type Tab = "idioms" | "listening" | "quiz" | "stats";
-
-const IDIOMS_STORAGE_KEY = "study-os-idioms";
-const STATS_STORAGE_KEY = "study-os-idiom-stats";
-
-const emptyStats: StudyStats = {
-  totalAnswers: 0,
-  correctAnswers: 0,
-  listeningCount: 0,
-};
-
-function shuffleIdioms(idioms: Idiom[]) {
-  const copiedIdioms = [...idioms];
-
-  for (let i = copiedIdioms.length - 1; i > 0; i -= 1) {
-    const randomIndex = Math.floor(Math.random() * (i + 1));
-
-    [copiedIdioms[i], copiedIdioms[randomIndex]] = [
-      copiedIdioms[randomIndex],
-      copiedIdioms[i],
-    ];
-  }
-
-  return copiedIdioms;
-}
-
-function normalizeAnswer(text: string) {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "")
-    .replace(/[。．、,.・！!？?]/g, "");
-}
-
-function isCorrectAnswer(input: string, answer: string) {
-  const normalizedInput = normalizeAnswer(input);
-
-  if (normalizedInput === "") {
-    return false;
-  }
-
-  const possibleAnswers = answer
-    .split(/[、,，/／;；|・]/)
-    .map((item) => normalizeAnswer(item))
-    .filter((item) => item !== "");
-
-  return possibleAnswers.some(
-    (possibleAnswer) =>
-      normalizedInput === possibleAnswer ||
-      possibleAnswer.includes(normalizedInput),
-  );
-}
-
-function wait(milliseconds: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, milliseconds);
-  });
-}
+const folderIcons = [
+  "📘",
+  "📗",
+  "📕",
+  "📙",
+  "🏫",
+  "🔥",
+  "⭐",
+  "🎯",
+  "📁",
+];
 
 export default function IdiomsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("idioms");
+  const [folders, setFolders] = useState<IdiomFolder[]>([]);
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [showIdiomModal, setShowIdiomModal] = useState(false);
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
 
-  const [english, setEnglish] = useState("");
-  const [japanese, setJapanese] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-
-  const [idioms, setIdioms] = useState<Idiom[]>([]);
-  const [stats, setStats] = useState<StudyStats>(emptyStats);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  const [searchText, setSearchText] = useState("");
-  const [showWeakOnly, setShowWeakOnly] = useState(false);
-
-  const [speechRate, setSpeechRate] = useState(1);
-  const [isListening, setIsListening] = useState(false);
-  const [currentListeningIdiom, setCurrentListeningIdiom] =
-    useState<Idiom | null>(null);
-
-  const [quizIdioms, setQuizIdioms] = useState<Idiom[]>([]);
-  const [quizIndex, setQuizIndex] = useState(0);
-  const [quizInput, setQuizInput] = useState("");
-  const [quizFeedback, setQuizFeedback] = useState("");
-  const [quizCorrect, setQuizCorrect] = useState(0);
-  const [quizWrong, setQuizWrong] = useState(0);
-  const [quizFinished, setQuizFinished] = useState(false);
-  const [weakQuizOnly, setWeakQuizOnly] = useState(false);
-
-  const listeningRef = useRef(false);
+  function refresh() {
+    setFolders(getIdiomFolders());
+  }
 
   useEffect(() => {
-    const savedIdioms = localStorage.getItem(IDIOMS_STORAGE_KEY);
-    const savedStats = localStorage.getItem(STATS_STORAGE_KEY);
+    refresh();
 
-    if (savedIdioms) {
-      try {
-        const parsedIdioms = JSON.parse(savedIdioms) as Partial<Idiom>[];
+    window.addEventListener(
+      "study-os-idioms-updated",
+      refresh,
+    );
 
-        const repairedIdioms: Idiom[] = parsedIdioms
-          .filter(
-            (idiom) =>
-              typeof idiom.id === "number" &&
-              typeof idiom.english === "string" &&
-              typeof idiom.japanese === "string",
-          )
-          .map((idiom) => ({
-            id: idiom.id as number,
-            english: idiom.english as string,
-            japanese: idiom.japanese as string,
-            correct:
-              typeof idiom.correct === "number" ? idiom.correct : 0,
-            wrong: typeof idiom.wrong === "number" ? idiom.wrong : 0,
-          }));
-
-        setIdioms(repairedIdioms);
-      } catch {
-        console.error("熟語データを読み込めませんでした。");
-      }
-    }
-
-    if (savedStats) {
-      try {
-        const parsedStats = JSON.parse(savedStats) as Partial<StudyStats>;
-
-        setStats({
-          totalAnswers:
-            typeof parsedStats.totalAnswers === "number"
-              ? parsedStats.totalAnswers
-              : 0,
-          correctAnswers:
-            typeof parsedStats.correctAnswers === "number"
-              ? parsedStats.correctAnswers
-              : 0,
-          listeningCount:
-            typeof parsedStats.listeningCount === "number"
-              ? parsedStats.listeningCount
-              : 0,
-        });
-      } catch {
-        console.error("学習記録を読み込めませんでした。");
-      }
-    }
-
-    setIsLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-
-    localStorage.setItem(IDIOMS_STORAGE_KEY, JSON.stringify(idioms));
-  }, [idioms, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-
-    localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(stats));
-  }, [stats, isLoaded]);
-
-  useEffect(() => {
     return () => {
-      listeningRef.current = false;
-
-      if (
-        typeof window !== "undefined" &&
-        "speechSynthesis" in window
-      ) {
-        window.speechSynthesis.cancel();
-      }
+      window.removeEventListener(
+        "study-os-idioms-updated",
+        refresh,
+      );
     };
   }, []);
 
-  const weakIdioms = useMemo(() => {
-    return idioms.filter(
-      (idiom) => idiom.wrong > 0 && idiom.wrong >= idiom.correct,
+  const idioms = getIdioms();
+  const dueMeanings = getDueIdiomMeanings();
+  const weakMeanings = getWeakIdiomMeanings();
+  const favorites = getFavoriteIdioms();
+  const stats = getIdiomStats();
+
+  const orderedFolders = useMemo(() => {
+    return [...folders].sort(
+      (a, b) =>
+        Number(b.pinned) - Number(a.pinned) ||
+        a.sortOrder - b.sortOrder,
     );
-  }, [idioms]);
+  }, [folders]);
 
-  const displayedIdioms = useMemo(() => {
-    const normalizedSearch = searchText.trim().toLowerCase();
-
-    return idioms.filter((idiom) => {
-      const matchesSearch =
-        normalizedSearch === "" ||
-        idiom.english.toLowerCase().includes(normalizedSearch) ||
-        idiom.japanese.includes(searchText.trim());
-
-      const matchesWeak =
-        !showWeakOnly ||
-        (idiom.wrong > 0 && idiom.wrong >= idiom.correct);
-
-      return matchesSearch && matchesWeak;
-    });
-  }, [idioms, searchText, showWeakOnly]);
-
-  const totalIdiomAnswers = idioms.reduce(
-    (total, idiom) => total + idiom.correct + idiom.wrong,
-    0,
-  );
-
-  const idiomCorrectAnswers = idioms.reduce(
-    (total, idiom) => total + idiom.correct,
-    0,
-  );
-
-  const correctRate =
-    stats.totalAnswers === 0
-      ? 0
-      : Math.round(
-          (stats.correctAnswers / stats.totalAnswers) * 100,
-        );
-
-  const quizRate =
-    quizCorrect + quizWrong === 0
-      ? 0
-      : Math.round(
-          (quizCorrect / (quizCorrect + quizWrong)) * 100,
-        );
-
-  function resetForm() {
-    setEnglish("");
-    setJapanese("");
-    setEditingId(null);
-  }
-
-  function saveIdiom() {
-    const trimmedEnglish = english.trim();
-    const trimmedJapanese = japanese.trim();
-
-    if (trimmedEnglish === "" || trimmedJapanese === "") {
-      alert("英熟語と日本語の意味を両方入力してね！");
-      return;
-    }
-
-    if (editingId !== null) {
-      setIdioms((currentIdioms) =>
-        currentIdioms.map((idiom) =>
-          idiom.id === editingId
-            ? {
-                ...idiom,
-                english: trimmedEnglish,
-                japanese: trimmedJapanese,
-              }
-            : idiom,
-        ),
-      );
-
-      resetForm();
-      return;
-    }
-
-    const duplicatedIdiom = idioms.some(
-      (idiom) =>
-        idiom.english.toLowerCase() === trimmedEnglish.toLowerCase(),
+  function toggleFolder(folderId: string) {
+    setSelectedFolders((current) =>
+      current.includes(folderId)
+        ? current.filter((id) => id !== folderId)
+        : [...current, folderId],
     );
-
-    if (duplicatedIdiom) {
-      const shouldAdd = window.confirm(
-        "同じ英熟語がすでにあります。それでも登録しますか？",
-      );
-
-      if (!shouldAdd) {
-        return;
-      }
-    }
-
-    const newIdiom: Idiom = {
-      id: Date.now(),
-      english: trimmedEnglish,
-      japanese: trimmedJapanese,
-      correct: 0,
-      wrong: 0,
-    };
-
-    setIdioms((currentIdioms) => [...currentIdioms, newIdiom]);
-    resetForm();
   }
-
-  function startEditing(idiom: Idiom) {
-    setEnglish(idiom.english);
-    setJapanese(idiom.japanese);
-    setEditingId(idiom.id);
-
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  }
-
-  function deleteIdiom(id: number) {
-    const targetIdiom = idioms.find((idiom) => idiom.id === id);
-
-    const shouldDelete = window.confirm(
-      `「${targetIdiom?.english ?? "この熟語"}」を削除しますか？`,
-    );
-
-    if (!shouldDelete) {
-      return;
-    }
-
-    setIdioms((currentIdioms) =>
-      currentIdioms.filter((idiom) => idiom.id !== id),
-    );
-
-    if (editingId === id) {
-      resetForm();
-    }
-  }
-
-  function handleEnter(
-    event: React.KeyboardEvent<HTMLInputElement>,
-  ) {
-    if (event.key === "Enter") {
-      saveIdiom();
-    }
-  }
-
-  function speakText(text: string, language: "en-US" | "ja-JP") {
-    return new Promise<void>((resolve) => {
-      if (!("speechSynthesis" in window)) {
-        resolve();
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(text);
-
-      utterance.lang = language;
-      utterance.rate = speechRate;
-      utterance.pitch = 1;
-      utterance.onend = () => resolve();
-      utterance.onerror = () => resolve();
-
-      window.speechSynthesis.speak(utterance);
-    });
-  }
-
-  async function startListening() {
-    if (idioms.length === 0) {
-      alert("先に熟語を登録してね！");
-      return;
-    }
-
-    if (!("speechSynthesis" in window)) {
-      alert("このブラウザは音声読み上げに対応していません。");
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-
-    listeningRef.current = true;
-    setIsListening(true);
-
-    setStats((currentStats) => ({
-      ...currentStats,
-      listeningCount: currentStats.listeningCount + 1,
-    }));
-
-    for (const idiom of idioms) {
-      if (!listeningRef.current) {
-        break;
-      }
-
-      setCurrentListeningIdiom(idiom);
-      await speakText(idiom.english, "en-US");
-
-      if (!listeningRef.current) {
-        break;
-      }
-
-      await wait(500);
-      await speakText(idiom.japanese, "ja-JP");
-
-      if (!listeningRef.current) {
-        break;
-      }
-
-      await wait(900);
-    }
-
-    listeningRef.current = false;
-    setIsListening(false);
-    setCurrentListeningIdiom(null);
-  }
-
-  function stopListening() {
-    listeningRef.current = false;
-    setIsListening(false);
-    setCurrentListeningIdiom(null);
-
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-  }
-
-  function startQuiz() {
-    const availableIdioms = weakQuizOnly ? weakIdioms : idioms;
-
-    if (availableIdioms.length === 0) {
-      alert(
-        weakQuizOnly
-          ? "苦手熟語がまだありません。"
-          : "先に熟語を登録してね！",
-      );
-      return;
-    }
-
-    setQuizIdioms(shuffleIdioms(availableIdioms));
-    setQuizIndex(0);
-    setQuizInput("");
-    setQuizFeedback("");
-    setQuizCorrect(0);
-    setQuizWrong(0);
-    setQuizFinished(false);
-  }
-
-  function submitQuizAnswer() {
-    if (
-      quizFinished ||
-      quizIdioms.length === 0 ||
-      quizFeedback !== ""
-    ) {
-      return;
-    }
-
-    if (quizInput.trim() === "") {
-      alert("意味を入力してね！");
-      return;
-    }
-
-    const currentIdiom = quizIdioms[quizIndex];
-
-    const correct = isCorrectAnswer(
-      quizInput,
-      currentIdiom.japanese,
-    );
-
-    if (correct) {
-      setQuizFeedback("⭕ 正解！");
-      setQuizCorrect((count) => count + 1);
-    } else {
-      setQuizFeedback(
-        `❌ 不正解　正解：${currentIdiom.japanese}`,
-      );
-      setQuizWrong((count) => count + 1);
-    }
-
-    setIdioms((currentIdioms) =>
-      currentIdioms.map((idiom) =>
-        idiom.id === currentIdiom.id
-          ? {
-              ...idiom,
-              correct: idiom.correct + (correct ? 1 : 0),
-              wrong: idiom.wrong + (correct ? 0 : 1),
-            }
-          : idiom,
-      ),
-    );
-
-    setStats((currentStats) => ({
-      ...currentStats,
-      totalAnswers: currentStats.totalAnswers + 1,
-      correctAnswers:
-        currentStats.correctAnswers + (correct ? 1 : 0),
-    }));
-  }
-
-  function goToNextQuiz() {
-    if (quizIndex + 1 >= quizIdioms.length) {
-      setQuizFinished(true);
-      setQuizFeedback("");
-      return;
-    }
-
-    setQuizIndex((currentIndex) => currentIndex + 1);
-    setQuizInput("");
-    setQuizFeedback("");
-  }
-
-  function handleQuizEnter(
-    event: React.KeyboardEvent<HTMLInputElement>,
-  ) {
-    if (event.key !== "Enter") {
-      return;
-    }
-
-    if (quizFeedback === "") {
-      submitQuizAnswer();
-    } else {
-      goToNextQuiz();
-    }
-  }
-
-  function resetAllData() {
-    const shouldReset = window.confirm(
-      "登録熟語と学習記録をすべて削除します。本当にいいですか？",
-    );
-
-    if (!shouldReset) {
-      return;
-    }
-
-    stopListening();
-    setIdioms([]);
-    setStats(emptyStats);
-    setQuizIdioms([]);
-    setQuizFinished(false);
-    setQuizFeedback("");
-    resetForm();
-
-    localStorage.removeItem(IDIOMS_STORAGE_KEY);
-    localStorage.removeItem(STATS_STORAGE_KEY);
-  }
-
-  const panelStyle: React.CSSProperties = {
-    maxWidth: "760px",
-    margin: "0 auto",
-    padding: "28px",
-    background: "white",
-    borderRadius: "22px",
-    boxShadow: "0 8px 28px rgba(15, 23, 42, 0.08)",
-  };
-
-  const buttonStyle: React.CSSProperties = {
-    padding: "14px 20px",
-    border: "none",
-    borderRadius: "12px",
-    fontSize: "18px",
-    fontWeight: "bold",
-    cursor: "pointer",
-  };
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background:
-          "linear-gradient(180deg, #F5F3FF 0%, #F8FAFC 45%)",
-        padding: "36px 18px 60px",
-        color: "#0F172A",
-      }}
-    >
-      <h1
-        style={{
-          textAlign: "center",
-          fontSize: "clamp(38px, 7vw, 58px)",
-          color: "#7C3AED",
-          marginBottom: "10px",
-        }}
-      >
-        🔤 熟語学習
-      </h1>
+    <main className="min-h-screen bg-[linear-gradient(180deg,#f3efff_0%,#faf8ff_42%,#ffffff_100%)] px-4 pb-36 pt-6 text-slate-900">
+      <div className="mx-auto w-full max-w-6xl">
+        <section className="relative overflow-hidden rounded-[34px] bg-slate-950 p-6 text-white shadow-[0_24px_70px_rgba(15,23,42,0.22)] sm:p-8">
+          <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-violet-400/20 blur-3xl" />
 
-      <p
-        style={{
-          textAlign: "center",
-          color: "#64748B",
-          fontSize: "18px",
-          marginBottom: "28px",
-        }}
-      >
-        英熟語の登録・流し聞き・クイズ・復習
-      </p>
+          <div className="absolute -bottom-24 left-16 h-52 w-52 rounded-full bg-sky-400/15 blur-3xl" />
 
-      <nav
-        style={{
-          maxWidth: "760px",
-          margin: "0 auto 28px",
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(130px, 1fr))",
-          gap: "10px",
-        }}
-      >
-        {[
-          { id: "idioms", label: "📖 熟語帳" },
-          { id: "listening", label: "🔊 流し聞き" },
-          { id: "quiz", label: "📝 クイズ" },
-          { id: "stats", label: "📊 学習記録" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => {
-              stopListening();
-              setActiveTab(tab.id as Tab);
-            }}
-            style={{
-              ...buttonStyle,
-              background:
-                activeTab === tab.id ? "#7C3AED" : "white",
-              color: activeTab === tab.id ? "white" : "#334155",
-              boxShadow: "0 4px 14px rgba(15, 23, 42, 0.08)",
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+          <div className="relative">
+            <Link
+              href="/english"
+              className="inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black"
+            >
+              ← 英語ホーム
+            </Link>
 
-      {!isLoaded ? (
-        <section style={panelStyle}>
-          <p style={{ textAlign: "center", fontSize: "20px" }}>
-            読み込み中...
-          </p>
-        </section>
-      ) : (
-        <>
-          {activeTab === "idioms" && (
-            <section style={panelStyle}>
-              <h2
-                style={{
-                  textAlign: "center",
-                  fontSize: "28px",
-                  marginBottom: "24px",
-                }}
-              >
-                {editingId === null
-                  ? "✏️ 熟語を登録"
-                  : "🛠️ 熟語を編集"}
-              </h2>
+            <p className="mt-6 text-sm font-black tracking-[0.18em] text-violet-300">
+              IDIOMS OS
+            </p>
 
-              <div style={{ display: "grid", gap: "14px" }}>
-                <input
-                  type="text"
-                  placeholder="英熟語を入力　例：look for"
-                  value={english}
-                  onChange={(event) =>
-                    setEnglish(event.target.value)
-                  }
-                  onKeyDown={handleEnter}
-                  style={{
-                    width: "100%",
-                    padding: "15px",
-                    fontSize: "19px",
-                    borderRadius: "12px",
-                    border: "1px solid #CBD5E1",
-                    boxSizing: "border-box",
-                  }}
-                />
+            <h1 className="mt-2 text-3xl font-black sm:text-4xl">
+              📖 英熟語帳
+            </h1>
 
-                <input
-                  type="text"
-                  placeholder="日本語の意味　例：〜を探す"
-                  value={japanese}
-                  onChange={(event) =>
-                    setJapanese(event.target.value)
-                  }
-                  onKeyDown={handleEnter}
-                  style={{
-                    width: "100%",
-                    padding: "15px",
-                    fontSize: "19px",
-                    borderRadius: "12px",
-                    border: "1px solid #CBD5E1",
-                    boxSizing: "border-box",
-                  }}
-                />
+            <p className="mt-3 max-w-xl text-sm font-medium leading-7 text-slate-300">
+              1つの熟語に複数の意味を登録し、意味ごとに忘却曲線で復習。
+            </p>
 
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "10px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={saveIdiom}
-                    style={{
-                      ...buttonStyle,
-                      flex: "1 1 220px",
-                      color: "white",
-                      background: "#7C3AED",
-                    }}
-                  >
-                    {editingId === null
-                      ? "＋ 登録する"
-                      : "✓ 変更を保存"}
-                  </button>
-
-                  {editingId !== null && (
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      style={{
-                        ...buttonStyle,
-                        flex: "1 1 150px",
-                        background: "#E2E8F0",
-                        color: "#334155",
-                      }}
-                    >
-                      キャンセル
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <hr
-                style={{
-                  border: "none",
-                  borderTop: "1px solid #E2E8F0",
-                  margin: "32px 0",
-                }}
+            <div className="mt-6 grid grid-cols-4 gap-2 sm:gap-3">
+              <HeroStat
+                label="熟語"
+                value={`${idioms.length}個`}
               />
 
-              <h2
-                style={{
-                  textAlign: "center",
-                  fontSize: "28px",
-                  marginBottom: "8px",
-                }}
-              >
-                📖 登録済み熟語
-              </h2>
+              <HeroStat
+                label="今日の復習"
+                value={`${dueMeanings.length}個`}
+              />
 
-              <p
-                style={{
-                  textAlign: "center",
-                  color: "#64748B",
-                  marginBottom: "20px",
-                }}
-              >
-                全{idioms.length}個・苦手{weakIdioms.length}個
+              <HeroStat
+                label="苦手"
+                value={`${weakMeanings.length}個`}
+              />
+
+              <HeroStat
+                label="学習時間"
+                value={`${Math.floor(
+                  stats.totalSeconds / 60,
+                )}分`}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-black tracking-[0.15em] text-violet-500">
+                TODAY&apos;S MISSION
               </p>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) auto",
-                  gap: "10px",
-                  marginBottom: "20px",
-                }}
-              >
-                <input
-                  type="search"
-                  placeholder="英語または日本語で検索"
-                  value={searchText}
-                  onChange={(event) =>
-                    setSearchText(event.target.value)
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "13px",
-                    fontSize: "17px",
-                    borderRadius: "12px",
-                    border: "1px solid #CBD5E1",
-                    boxSizing: "border-box",
-                  }}
-                />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowWeakOnly((current) => !current)
-                  }
-                  style={{
-                    ...buttonStyle,
-                    background: showWeakOnly
-                      ? "#F59E0B"
-                      : "#E2E8F0",
-                    color: showWeakOnly ? "white" : "#334155",
-                  }}
-                >
-                  🔥 苦手だけ
-                </button>
-              </div>
-
-              {displayedIdioms.length === 0 ? (
-                <p
-                  style={{
-                    textAlign: "center",
-                    color: "#64748B",
-                    fontSize: "18px",
-                    padding: "25px 0",
-                  }}
-                >
-                  表示できる熟語がありません
-                </p>
-              ) : (
-                <div style={{ display: "grid", gap: "12px" }}>
-                  {displayedIdioms.map((idiom, index) => (
-                    <article
-                      key={idiom.id}
-                      style={{
-                        padding: "18px",
-                        border: "1px solid #E2E8F0",
-                        borderRadius: "15px",
-                        background: "#FAF5FF",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          gap: "14px",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div style={{ flex: "1 1 260px" }}>
-                          <div
-                            style={{
-                              fontSize: "22px",
-                              fontWeight: "bold",
-                              overflowWrap: "anywhere",
-                            }}
-                          >
-                            {index + 1}. {idiom.english}
-                          </div>
-
-                          <div
-                            style={{
-                              marginTop: "7px",
-                              fontSize: "19px",
-                              color: "#475569",
-                              overflowWrap: "anywhere",
-                            }}
-                          >
-                            → {idiom.japanese}
-                          </div>
-
-                          <div
-                            style={{
-                              marginTop: "9px",
-                              fontSize: "15px",
-                              color: "#64748B",
-                            }}
-                          >
-                            ⭕ {idiom.correct}回　❌ {idiom.wrong}回
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "8px",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => startEditing(idiom)}
-                            style={{
-                              padding: "10px 12px",
-                              border: "none",
-                              borderRadius: "10px",
-                              background: "#EDE9FE",
-                              cursor: "pointer",
-                              fontSize: "17px",
-                            }}
-                          >
-                            ✏️
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => deleteIdiom(idiom.id)}
-                            style={{
-                              padding: "10px 12px",
-                              border: "none",
-                              borderRadius: "10px",
-                              background: "#FEE2E2",
-                              cursor: "pointer",
-                              fontSize: "17px",
-                            }}
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {activeTab === "listening" && (
-            <section style={panelStyle}>
-              <h2
-                style={{
-                  textAlign: "center",
-                  fontSize: "30px",
-                  marginBottom: "12px",
-                }}
-              >
-                🔊 熟語の流し聞き
+              <h2 className="mt-1 text-2xl font-black">
+                今日やること
               </h2>
+            </div>
 
-              <p
-                style={{
-                  textAlign: "center",
-                  color: "#64748B",
-                  fontSize: "18px",
-                  marginBottom: "28px",
-                }}
-              >
-                英熟語のあとに日本語の意味を読み上げます
+            <Link
+              href="/english/idioms/review"
+              className="rounded-full bg-violet-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-violet-200"
+            >
+              ▶ 復習を始める
+            </Link>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <MissionCard
+              icon="🔁"
+              title="期限が来た意味"
+              value={`${dueMeanings.length}個`}
+              href="/english/idioms/review"
+            />
+
+            <MissionCard
+              icon="❌"
+              title="苦手な意味"
+              value={`${weakMeanings.length}個`}
+              href="/english/idioms/quiz?smart=weak"
+            />
+
+            <MissionCard
+              icon="⭐"
+              title="お気に入り"
+              value={`${favorites.length}個`}
+              href="/english/idioms/quiz?smart=favorite"
+            />
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-black tracking-[0.15em] text-violet-500">
+                FOLDERS
               </p>
 
-              <label
-                style={{
-                  display: "block",
-                  maxWidth: "360px",
-                  margin: "0 auto 25px",
-                  fontSize: "18px",
-                  fontWeight: "bold",
-                }}
-              >
-                読み上げ速度：{speechRate}倍
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.25"
-                  value={speechRate}
-                  disabled={isListening}
-                  onChange={(event) =>
-                    setSpeechRate(Number(event.target.value))
-                  }
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    marginTop: "12px",
-                  }}
-                />
-              </label>
-
-              <div
-                style={{
-                  minHeight: "180px",
-                  padding: "30px",
-                  borderRadius: "20px",
-                  background: "#FAF5FF",
-                  textAlign: "center",
-                  marginBottom: "24px",
-                  display: "grid",
-                  placeItems: "center",
-                }}
-              >
-                {currentListeningIdiom ? (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: "38px",
-                        fontWeight: "bold",
-                        color: "#7C3AED",
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {currentListeningIdiom.english}
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: "25px",
-                        marginTop: "15px",
-                        overflowWrap: "anywhere",
-                      }}
-                    >
-                      {currentListeningIdiom.japanese}
-                    </div>
-                  </div>
-                ) : (
-                  <p
-                    style={{
-                      fontSize: "21px",
-                      color: "#64748B",
-                    }}
-                  >
-                    登録済みの{idioms.length}個を読み上げます
-                  </p>
-                )}
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: "12px",
-                  justifyContent: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={startListening}
-                  disabled={isListening}
-                  style={{
-                    ...buttonStyle,
-                    minWidth: "210px",
-                    color: "white",
-                    background: isListening
-                      ? "#94A3B8"
-                      : "#16A34A",
-                  }}
-                >
-                  ▶️ 流し聞きを開始
-                </button>
-
-                <button
-                  type="button"
-                  onClick={stopListening}
-                  disabled={!isListening}
-                  style={{
-                    ...buttonStyle,
-                    minWidth: "160px",
-                    color: "white",
-                    background: isListening
-                      ? "#DC2626"
-                      : "#94A3B8",
-                  }}
-                >
-                  ⏹ 停止
-                </button>
-              </div>
-            </section>
-          )}
-
-          {activeTab === "quiz" && (
-            <section style={panelStyle}>
-              <h2
-                style={{
-                  textAlign: "center",
-                  fontSize: "30px",
-                  marginBottom: "18px",
-                }}
-              >
-                📝 熟語クイズ
+              <h2 className="mt-1 text-2xl font-black">
+                自分のフォルダ
               </h2>
 
-              {quizIdioms.length === 0 || quizFinished ? (
-                <div style={{ textAlign: "center" }}>
-                  {quizFinished && (
-                    <div
-                      style={{
-                        padding: "24px",
-                        borderRadius: "18px",
-                        background: "#FAF5FF",
-                        marginBottom: "22px",
-                      }}
-                    >
+              <p className="mt-2 text-sm text-slate-500">
+                色・アイコン・説明を自由に設定できる。
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowFolderModal(true)}
+              className="rounded-2xl bg-violet-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-violet-200"
+            >
+              ＋ フォルダ作成
+            </button>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {orderedFolders.map((folder) => {
+              const idiomCount = idioms.filter(
+                (idiom) =>
+                  idiom.folderIds.includes(folder.id),
+              ).length;
+
+              return (
+                <article
+                  key={folder.id}
+                  className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-xl sm:p-5"
+                >
+                  <Link
+                    href={`/english/idioms/folder/${folder.id}`}
+                  >
+                    <div className="flex items-start justify-between">
                       <div
+                        className="grid h-14 w-14 place-items-center rounded-2xl text-3xl"
                         style={{
-                          fontSize: "30px",
-                          fontWeight: "bold",
-                          color: "#7C3AED",
+                          backgroundColor: `${folder.color}18`,
                         }}
                       >
-                        クイズ終了！
+                        {folder.icon}
                       </div>
 
-                      <p
-                        style={{
-                          fontSize: "22px",
-                          marginTop: "14px",
-                        }}
-                      >
-                        ⭕ {quizCorrect}問　❌ {quizWrong}問
-                      </p>
-
-                      <p
-                        style={{
-                          fontSize: "24px",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        正答率：{quizRate}%
-                      </p>
+                      {folder.pinned && <span>📌</span>}
                     </div>
-                  )}
 
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      marginBottom: "20px",
-                      fontSize: "18px",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={weakQuizOnly}
-                      onChange={(event) =>
-                        setWeakQuizOnly(event.target.checked)
-                      }
-                    />
-                    🔥 苦手熟語だけ出題
-                  </label>
+                    <h3 className="mt-4 truncate text-lg font-black">
+                      {folder.name}
+                    </h3>
 
-                  <div>
+                    <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-slate-500">
+                      {folder.description || "説明なし"}
+                    </p>
+
+                    <p
+                      className="mt-4 text-sm font-black"
+                      style={{
+                        color: folder.color,
+                      }}
+                    >
+                      {idiomCount}個 →
+                    </p>
+                  </Link>
+
+                  <div className="mt-4 flex gap-2 border-t border-slate-100 pt-3">
                     <button
-                      type="button"
-                      onClick={startQuiz}
-                      style={{
-                        ...buttonStyle,
-                        minWidth: "240px",
-                        color: "white",
-                        background: "#7C3AED",
-                      }}
+                      onClick={() =>
+                        updateIdiomFolder(folder.id, {
+                          pinned: !folder.pinned,
+                        })
+                      }
+                      className="flex-1 rounded-xl bg-slate-100 px-2 py-2 text-[11px] font-black"
                     >
-                      🎮 クイズ開始
+                      {folder.pinned
+                        ? "ピン解除"
+                        : "ピン"}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const name = window.prompt(
+                          "新しいフォルダ名",
+                          folder.name,
+                        );
+
+                        if (name?.trim()) {
+                          updateIdiomFolder(folder.id, {
+                            name: name.trim(),
+                          });
+                        }
+                      }}
+                      className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] font-black"
+                    >
+                      編集
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const accepted =
+                          window.confirm(
+                            `「${folder.name}」を削除しますか？\n熟語そのものは残ります。`,
+                          );
+
+                        if (accepted) {
+                          deleteIdiomFolder(folder.id);
+                        }
+                      }}
+                      className="rounded-xl bg-rose-50 px-3 py-2 text-[11px] font-black text-rose-600"
+                    >
+                      削除
                     </button>
                   </div>
+                </article>
+              );
+            })}
 
-                  <p
-                    style={{
-                      marginTop: "18px",
-                      color: "#64748B",
-                    }}
-                  >
-                    {weakQuizOnly
-                      ? `苦手熟語：${weakIdioms.length}個`
-                      : `登録熟語：${idioms.length}個`}
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <p
-                    style={{
-                      textAlign: "center",
-                      color: "#64748B",
-                      fontSize: "17px",
-                    }}
-                  >
-                    第{quizIndex + 1}問 / {quizIdioms.length}問
-                  </p>
+            <button
+              onClick={() => setShowFolderModal(true)}
+              className="min-h-56 rounded-[26px] border-2 border-dashed border-violet-200 bg-violet-50/60 p-5 text-center transition hover:bg-violet-50"
+            >
+              <span className="text-4xl">＋</span>
 
-                  <div
-                    style={{
-                      textAlign: "center",
-                      fontSize: "clamp(32px, 7vw, 52px)",
-                      fontWeight: "bold",
-                      color: "#7C3AED",
-                      margin: "28px 0",
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    {quizIdioms[quizIndex].english}
-                  </div>
+              <p className="mt-3 font-black text-violet-700">
+                新しいフォルダ
+              </p>
+            </button>
+          </div>
+        </section>
 
-                  <input
-                    type="text"
-                    placeholder="日本語の意味を入力"
-                    value={quizInput}
-                    disabled={quizFeedback !== ""}
-                    onChange={(event) =>
-                      setQuizInput(event.target.value)
-                    }
-                    onKeyDown={handleQuizEnter}
-                    autoFocus
-                    style={{
-                      width: "100%",
-                      padding: "16px",
-                      fontSize: "21px",
-                      textAlign: "center",
-                      borderRadius: "13px",
-                      border: "2px solid #CBD5E1",
-                      boxSizing: "border-box",
-                    }}
-                  />
+        <section className="mt-8 rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <p className="text-xs font-black tracking-[0.15em] text-violet-500">
+            MIX STUDY
+          </p>
 
-                  {quizFeedback !== "" && (
-                    <div
-                      style={{
-                        marginTop: "18px",
-                        padding: "18px",
-                        textAlign: "center",
-                        fontSize: "21px",
-                        fontWeight: "bold",
-                        borderRadius: "14px",
-                        background: quizFeedback.startsWith("⭕")
-                          ? "#DCFCE7"
-                          : "#FEE2E2",
-                      }}
-                    >
-                      {quizFeedback}
-                    </div>
-                  )}
+          <h2 className="mt-1 text-2xl font-black">
+            まとめて問題を出す
+          </h2>
 
-                  <div
-                    style={{
-                      marginTop: "20px",
-                      textAlign: "center",
-                    }}
-                  >
-                    {quizFeedback === "" ? (
-                      <button
-                        type="button"
-                        onClick={submitQuizAnswer}
-                        style={{
-                          ...buttonStyle,
-                          minWidth: "200px",
-                          color: "white",
-                          background: "#7C3AED",
-                        }}
-                      >
-                        答える
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={goToNextQuiz}
-                        style={{
-                          ...buttonStyle,
-                          minWidth: "200px",
-                          color: "white",
-                          background: "#2563EB",
-                        }}
-                      >
-                        {quizIndex + 1 >= quizIdioms.length
-                          ? "結果を見る"
-                          : "次の問題へ"}
-                      </button>
-                    )}
-                  </div>
+          <p className="mt-2 text-sm text-slate-500">
+            複数のフォルダを選び、熟語と意味を混ぜて出題。
+          </p>
 
-                  <p
-                    style={{
-                      textAlign: "center",
-                      marginTop: "20px",
-                      color: "#64748B",
-                      fontSize: "18px",
-                    }}
-                  >
-                    ⭕ {quizCorrect}　❌ {quizWrong}
-                  </p>
-                </div>
-              )}
-            </section>
-          )}
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {orderedFolders.map((folder) => {
+              const checked =
+                selectedFolders.includes(folder.id);
 
-          {activeTab === "stats" && (
-            <section style={panelStyle}>
-              <h2
-                style={{
-                  textAlign: "center",
-                  fontSize: "30px",
-                  marginBottom: "28px",
-                }}
-              >
-                📊 熟語学習記録
-              </h2>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(150px, 1fr))",
-                  gap: "14px",
-                }}
-              >
-                {[
-                  {
-                    label: "登録熟語",
-                    value: `${idioms.length}個`,
-                  },
-                  {
-                    label: "苦手熟語",
-                    value: `${weakIdioms.length}個`,
-                  },
-                  {
-                    label: "クイズ回答",
-                    value: `${stats.totalAnswers}問`,
-                  },
-                  {
-                    label: "通算正答率",
-                    value: `${correctRate}%`,
-                  },
-                  {
-                    label: "流し聞き",
-                    value: `${stats.listeningCount}回`,
-                  },
-                  {
-                    label: "熟語別回答",
-                    value: `${totalIdiomAnswers}回`,
-                  },
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    style={{
-                      padding: "22px 12px",
-                      borderRadius: "16px",
-                      background: "#FAF5FF",
-                      textAlign: "center",
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: "#64748B",
-                        fontSize: "16px",
-                      }}
-                    >
-                      {item.label}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: "8px",
-                        fontSize: "28px",
-                        fontWeight: "bold",
-                        color: "#7C3AED",
-                      }}
-                    >
-                      {item.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {totalIdiomAnswers > 0 && (
-                <div
-                  style={{
-                    marginTop: "28px",
-                    padding: "20px",
-                    borderRadius: "16px",
-                    background: "#F8FAFC",
-                    textAlign: "center",
-                    fontSize: "18px",
-                  }}
-                >
-                  熟語別の正解数：{idiomCorrectAnswers}回 /{" "}
-                  {totalIdiomAnswers}回
-                </div>
-              )}
-
-              <div
-                style={{
-                  marginTop: "32px",
-                  textAlign: "center",
-                }}
-              >
+              return (
                 <button
-                  type="button"
-                  onClick={resetAllData}
-                  style={{
-                    ...buttonStyle,
-                    background: "#FEE2E2",
-                    color: "#B91C1C",
-                  }}
+                  key={folder.id}
+                  onClick={() =>
+                    toggleFolder(folder.id)
+                  }
+                  className={`flex items-center gap-3 rounded-2xl border p-4 text-left transition ${
+                    checked
+                      ? "border-violet-400 bg-violet-50 ring-2 ring-violet-100"
+                      : "border-slate-200 bg-white"
+                  }`}
                 >
-                  ⚠️ 熟語と記録をすべて削除
+                  <span className="text-2xl">
+                    {folder.icon}
+                  </span>
+
+                  <span className="min-w-0 flex-1 truncate text-sm font-black">
+                    {folder.name}
+                  </span>
+
+                  <span>{checked ? "✓" : ""}</span>
                 </button>
-              </div>
-            </section>
-          )}
-        </>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <Link
+              href={
+                selectedFolders.length > 0
+                  ? `/english/idioms/quiz?folders=${selectedFolders.join(
+                      ",",
+                    )}`
+                  : "#"
+              }
+              className={`rounded-2xl py-4 text-center font-black text-white ${
+                selectedFolders.length > 0
+                  ? "bg-violet-600"
+                  : "pointer-events-none bg-slate-300"
+              }`}
+            >
+              📝 まとめクイズ
+            </Link>
+
+            <Link
+              href={
+                selectedFolders.length > 0
+                  ? `/english/idioms/listen?folders=${selectedFolders.join(
+                      ",",
+                    )}`
+                  : "#"
+              }
+              className={`rounded-2xl py-4 text-center font-black text-white ${
+                selectedFolders.length > 0
+                  ? "bg-sky-500"
+                  : "pointer-events-none bg-slate-300"
+              }`}
+            >
+              🎧 まとめて流し聞き
+            </Link>
+          </div>
+        </section>
+
+        <section className="mt-8 grid gap-3 sm:grid-cols-2">
+          <button
+            onClick={() => setShowIdiomModal(true)}
+            className="rounded-[26px] bg-white p-5 text-left shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-1 hover:shadow-xl"
+          >
+            <span className="text-3xl">➕</span>
+
+            <h3 className="mt-3 text-lg font-black">
+              熟語を追加
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              1つの熟語に意味を何個でも追加できる
+            </p>
+          </button>
+
+          <Link
+            href="/english/idioms/folder/all"
+            className="rounded-[26px] bg-white p-5 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-1 hover:shadow-xl"
+          >
+            <span className="text-3xl">📖</span>
+
+            <h3 className="mt-3 text-lg font-black">
+              すべての熟語
+            </h3>
+
+            <p className="mt-1 text-sm text-slate-500">
+              熟語・意味・タグ・ファミリーを検索
+            </p>
+          </Link>
+        </section>
+      </div>
+
+      {showFolderModal && (
+        <FolderModal
+          onClose={() => setShowFolderModal(false)}
+          onSaved={() => {
+            setShowFolderModal(false);
+            refresh();
+          }}
+        />
       )}
 
-      <div
-        style={{
-          textAlign: "center",
-          marginTop: "34px",
-          display: "flex",
-          justifyContent: "center",
-          gap: "20px",
-          flexWrap: "wrap",
-        }}
-      >
-        <Link
-          href="/english/vocabulary"
-          onClick={stopListening}
-          style={{
-            color: "#2563EB",
-            fontSize: "20px",
-            textDecoration: "none",
-            fontWeight: "bold",
+      {showIdiomModal && (
+        <IdiomModal
+          folders={orderedFolders}
+          onClose={() => setShowIdiomModal(false)}
+          onSaved={() => {
+            setShowIdiomModal(false);
+            refresh();
           }}
-        >
-          📚 単語帳へ
-        </Link>
-
-        <Link
-          href="/english"
-          onClick={stopListening}
-          style={{
-            color: "#7C3AED",
-            fontSize: "20px",
-            textDecoration: "none",
-            fontWeight: "bold",
-          }}
-        >
-          ← 英語ページへ戻る
-        </Link>
-      </div>
+        />
+      )}
     </main>
+  );
+}
+
+function HeroStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-white/10 bg-white/10 px-2 py-4 text-center">
+      <p className="text-[10px] font-bold text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-1 truncate text-sm font-black text-white">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function MissionCard({
+  icon,
+  title,
+  value,
+  href,
+}: {
+  icon: string;
+  title: string;
+  value: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-4 rounded-3xl bg-slate-50 p-4 transition hover:bg-violet-50"
+    >
+      <span className="text-3xl">{icon}</span>
+
+      <div>
+        <p className="text-xs font-bold text-slate-500">
+          {title}
+        </p>
+
+        <p className="mt-1 text-xl font-black">
+          {value}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end bg-slate-950/45 p-3 sm:items-center sm:justify-center">
+      <div className="max-h-[92vh] w-full overflow-y-auto rounded-[30px] bg-white p-5 sm:max-w-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-black">
+            {title}
+          </h2>
+
+          <button
+            onClick={onClose}
+            className="grid h-10 w-10 place-items-center rounded-full bg-slate-100"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function FolderModal({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] =
+    useState("");
+  const [icon, setIcon] = useState("📘");
+  const [color, setColor] =
+    useState("#7C3AED");
+
+  return (
+    <Modal
+      title="新しいフォルダ"
+      onClose={onClose}
+    >
+      <Field
+        label="名前"
+        value={name}
+        onChange={setName}
+        placeholder="英検2級"
+      />
+
+      <Field
+        label="説明"
+        value={description}
+        onChange={setDescription}
+        placeholder="英検2級で覚えたい熟語"
+      />
+
+      <p className="mt-5 text-sm font-black">
+        アイコン
+      </p>
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        {folderIcons.map((item) => (
+          <button
+            key={item}
+            onClick={() => setIcon(item)}
+            className={`grid h-11 w-11 place-items-center rounded-xl text-xl ${
+              icon === item
+                ? "bg-violet-100 ring-2 ring-violet-500"
+                : "bg-slate-100"
+            }`}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-5 text-sm font-black">
+        色
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-3">
+        {folderColors.map((item) => (
+          <button
+            key={item}
+            onClick={() => setColor(item)}
+            className="h-9 w-9 rounded-full"
+            style={{
+              backgroundColor: item,
+              outline:
+                color === item
+                  ? `3px solid ${item}55`
+                  : "none",
+              outlineOffset: "3px",
+            }}
+          />
+        ))}
+      </div>
+
+      <button
+        onClick={() => {
+          if (!name.trim()) {
+            return;
+          }
+
+          createIdiomFolder({
+            name: name.trim(),
+            description: description.trim(),
+            icon,
+            color,
+          });
+
+          onSaved();
+        }}
+        className="mt-7 w-full rounded-2xl bg-violet-600 py-4 font-black text-white"
+      >
+        作成
+      </button>
+    </Modal>
+  );
+}
+
+function IdiomModal({
+  folders,
+  onClose,
+  onSaved,
+}: {
+  folders: IdiomFolder[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [phrase, setPhrase] = useState("");
+  const [family, setFamily] = useState("");
+  const [breakdown, setBreakdown] =
+    useState("");
+  const [tags, setTags] = useState("");
+  const [folderIds, setFolderIds] =
+    useState<string[]>([]);
+
+  const [meanings, setMeanings] = useState<
+    MeaningDraft[]
+  >([
+    {
+      meaning: "",
+      example: "",
+      note: "",
+    },
+  ]);
+
+  function updateMeaning(
+    index: number,
+    key: keyof MeaningDraft,
+    value: string,
+  ) {
+    setMeanings((current) =>
+      current.map((meaning, meaningIndex) =>
+        meaningIndex === index
+          ? {
+              ...meaning,
+              [key]: value,
+            }
+          : meaning,
+      ),
+    );
+  }
+
+  return (
+    <Modal
+      title="熟語を追加"
+      onClose={onClose}
+    >
+      <Field
+        label="英熟語"
+        value={phrase}
+        onChange={setPhrase}
+        placeholder="take off"
+      />
+
+      <Field
+        label="熟語ファミリー"
+        value={family}
+        onChange={setFamily}
+        placeholder="take"
+      />
+
+      <Field
+        label="構成・覚え方"
+        value={breakdown}
+        onChange={setBreakdown}
+        placeholder="take（取る）+ off（離れて）"
+      />
+
+      <Field
+        label="タグ（カンマ区切り）"
+        value={tags}
+        onChange={setTags}
+        placeholder="英検2級, 頻出"
+      />
+
+      <div className="mt-6 space-y-4">
+        {meanings.map((meaning, index) => (
+          <section
+            key={index}
+            className="rounded-[24px] border border-violet-100 bg-violet-50/70 p-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-black">
+                意味 {index + 1}
+              </h3>
+
+              {meanings.length > 1 && (
+                <button
+                  onClick={() =>
+                    setMeanings((current) =>
+                      current.filter(
+                        (_, meaningIndex) =>
+                          meaningIndex !== index,
+                      ),
+                    )
+                  }
+                  className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-600"
+                >
+                  削除
+                </button>
+              )}
+            </div>
+
+            <Field
+              label="意味"
+              value={meaning.meaning}
+              onChange={(value) =>
+                updateMeaning(
+                  index,
+                  "meaning",
+                  value,
+                )
+              }
+              placeholder="離陸する"
+            />
+
+            <Field
+              label="例文"
+              value={meaning.example}
+              onChange={(value) =>
+                updateMeaning(
+                  index,
+                  "example",
+                  value,
+                )
+              }
+              placeholder="The plane took off."
+            />
+
+            <Field
+              label="メモ"
+              value={meaning.note}
+              onChange={(value) =>
+                updateMeaning(
+                  index,
+                  "note",
+                  value,
+                )
+              }
+              placeholder="飛行機が地面を離れる"
+            />
+          </section>
+        ))}
+
+        <button
+          onClick={() =>
+            setMeanings((current) => [
+              ...current,
+              {
+                meaning: "",
+                example: "",
+                note: "",
+              },
+            ])
+          }
+          className="w-full rounded-2xl border-2 border-dashed border-violet-200 py-3 font-black text-violet-700"
+        >
+          ＋ 意味を追加
+        </button>
+      </div>
+
+      <p className="mt-6 text-sm font-black">
+        保存先（複数選択可）
+      </p>
+
+      <div className="mt-2 space-y-2">
+        {folders.map((folder) => {
+          const checked =
+            folderIds.includes(folder.id);
+
+          return (
+            <button
+              key={folder.id}
+              onClick={() =>
+                setFolderIds((current) =>
+                  checked
+                    ? current.filter(
+                        (id) =>
+                          id !== folder.id,
+                      )
+                    : [
+                        ...current,
+                        folder.id,
+                      ],
+                )
+              }
+              className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left ${
+                checked
+                  ? "bg-violet-100 ring-2 ring-violet-400"
+                  : "bg-slate-100"
+              }`}
+            >
+              <span className="font-bold">
+                {folder.icon} {folder.name}
+              </span>
+
+              <span>{checked ? "✓" : ""}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={() => {
+          const validMeanings =
+            meanings.filter((meaning) =>
+              meaning.meaning.trim(),
+            );
+
+          if (
+            !phrase.trim() ||
+            validMeanings.length === 0
+          ) {
+            return;
+          }
+
+          createIdiom({
+            phrase: phrase.trim(),
+
+            meanings: validMeanings.map(
+              (meaning) => ({
+                meaning:
+                  meaning.meaning.trim(),
+                example:
+                  meaning.example.trim(),
+                note: meaning.note.trim(),
+              }),
+            ),
+
+            folderIds,
+
+            tags: tags
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+
+            family: family.trim(),
+            breakdown: breakdown.trim(),
+          });
+
+          onSaved();
+        }}
+        className="mt-7 w-full rounded-2xl bg-violet-600 py-4 font-black text-white"
+      >
+        保存
+      </button>
+    </Modal>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="mt-4 block">
+      <span className="text-sm font-black">
+        {label}
+      </span>
+
+      <input
+        value={value}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        placeholder={placeholder}
+        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-violet-400"
+      />
+    </label>
   );
 }
